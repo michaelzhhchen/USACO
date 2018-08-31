@@ -1,0 +1,32 @@
+"""
+ID: michael332
+LANG: PYTHON3
+TASK: ride
+"""
+with open("ride.in") as fin:
+    lines = fin.readlines()
+C = (int(c) for c in lines[0].split())
+G = (int(c) for c in lines[0].split())
+
+comet = lines[0]
+group = lines[1]
+cometlist = 1
+grouplist = 1
+
+
+for i in range(len(comet)):
+	cometlist *= ord(comet[i])-64
+
+for i in range(len(group)):
+	grouplist *= ord(group[i])-64
+
+if grouplist % 47 == cometlist % 47:
+	x = "GO"
+else:
+	x = "STAY"
+
+fout = open ('ride.out', 'w')
+
+fout.write (str(x) + '\n')
+
+fout.close
