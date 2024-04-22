@@ -1,0 +1,243 @@
+---
+title: Detectors
+subtitle: Report
+author: the_ctrl_freaks
+execute:
+  echo: true
+---
+
+**Dataset Name:**
+
+-   “Detectors”
+
+**Source of Data:**
+
+-   This dataset was found in the TidyTuesday repository.
+
+**When and how was the data originally collected?** 
+
+-   This data was originally collected for a study on the accuracy of AI detection software for nonnative English speakers. It was found that AI detectors more frequently failed to correctly classify AI-generated work by nonnative English speakers than that of native English speakers (<https://www.sciencedirect.com/science/article/pii/S2666389923001307?via%3Dihub>).
+
+**Brief description of observations**
+
+-   Each observation in the dataset represents a paper either written by a human or AI and information on the probability and classification of the AI detector. Some papers will appear more than once as they were tested with multiple AI detectors. 
+
+**Research questions:** 
+
+-   Which AI detectors are the most accurate in differentiating AI and human writing? **Which AI prompt generates writing that is most “human-like” (appears to be written by a human and not a detector) according to the AI detectors? What type of model could we use that would allow us to analyze the false predictions of human or AI writing?**
+
+**A description of the research topic along with a concise statement of your hypotheses on this topic:**
+
+-   The research topic is on AI detectors and AI-generated writing. Since GPTZero was the least biased against nonnative speakers in the study, we believe that it will be the most accurate in differentiating AI writing from human writing. **In terms of prompts that will make the most human-like writing, I think that “elevate like native” might be the most effective since the other ones use technical or literary language, which is often an identifier of AI-generated writing.**  
+
+**Types of variables in the dataset:**
+
+-   There are a total of twelve variables in the dataset. Most of the variables are considered to be categorical (eleven variables). There is one quantitative variable – `.pred_AI` – related to the probability that a detector believes a paper is written by AI. There is a corresponding logical value – `kind` –with options of "Human" and "AI" and assigns "AI" to the entry for any value greater than 0.5 in the `.pred_AI` column.
+
+**Plan for analysis:** 
+
+-   First, we will load the data for viewing and clean up the dataset. We will also perform exploratory data analysis on various columns of the dataset to look for patterns and skews.
+
+-   To answer our research question, we can analyze the false positive, false negative, true positive, and true negative rates for each detector, which will allow us to see how accurate a partiuclar detector is. We will attempt to find the detector with the lowest false positive and false negatives rates, and the highest true positive and true negative rates.
+
+-   We will also calculate an ROC curve and AUC (Area Under the Curve) value for each detector as a way to more accurately compare detectors.
+
+-   After this analysis, we can assess which detectors were the most accurate, and if overall, one appears to be accurate in classifying whether a text is AI or human.
+
+# Initial Setup
+
+```{r}
+#|label: load-packages
+
+library(tidyverse)
+library(tidymodels)
+library(pROC)
+```
+
+```{r}
+#|label: load-detectors-dataset
+detectors <- read_csv("data/detectors.csv")
+```
+
+# Exploratory Data Analysis (EDA):
+
+## Dataset Cleanup
+
+```{r}
+#|label: renaming-the-dataset
+
+detectors_new <- detectors |>
+  rename(.pred_binary = .pred_class)
+```
+
+```{r}
+
+#|label: accuracy-variable
+
+detectors_new <- detectors_new |>
+  mutate(accuracy = case_when(
+    kind == "AI" & .pred_binary == "AI" ~ "True Positive",
+    kind == "AI" & .pred_binary == "Human"~ "False Negative",
+    kind == "Human" & .pred_binary == "Human" ~ "True Negative",
+    kind == "Human" & .pred_binary == "AI" ~ "False Positive",
+    )
+  )
+
+detectors_new <- detectors_new |>
+  mutate(correct = case_when(
+    kind == "AI" & .pred_binary == "AI" ~ "Correct",
+    kind == "AI" & .pred_binary == "Human"~ "Incorrect",
+    kind == "Human" & .pred_binary == "Human" ~ "Correct",
+    kind == "Human" & .pred_binary == "AI" ~ "Incorrect",
+    )
+  ) 
+```
+
+## Initial Data Exploration
+
+# Rate Calculations
+
+### All Detector Rates
+
+Approximately, the false negative rate among all detectors is 69%, and the false positive rate is 18%.
+
+```{r}
+#|label: all-detector-rates
+
+detectors_new |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+#|label: rate-calculation-function
+
+calculate_rates <- function(df, detector_name) {
+  df |>
+    filter(detector == detector_name) %>%
+    count(kind, .pred_binary) %>%
+    group_by(kind) %>%
+    mutate(rate = n / sum(n))
+}
+```
+
+```{r}
+#|label: sapling-rates
+
+calculate_rates(detectors_new, "Sapling")
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "Crossplag") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "ZeroGPT") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "OriginalityAI") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "HFOpenAI") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "Quil") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+```{r}
+detectors_new |> 
+  filter(detector == "GPTZero") |>
+  count(kind, .pred_binary) |>
+  group_by(kind) |>
+  mutate(rate = n/sum(n))
+```
+
+# Visualizing Rates
+
+```{r}
+
+#|label: visualizing-accuracy
+
+detectors_new |>
+  mutate(accuracy = fct_relevel(accuracy, c("True Positive", "True Negative", "False Positive", "False Negative"))) |>
+ggplot(aes(y = detector, fill = accuracy)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgoldenrod4", "lightgoldenrod3","cadetblue3", "cadetblue4"),
+                    breaks = c("False Negative", "False Positive", "True Negative", "True Positive")) +
+  labs(
+    x = "Proportion",
+    y = "Detector Type", 
+    title = "Detector Type and Accuracy",
+    fill = "Accuracy")
+
+```
+
+```{r}
+#|label: visualizing-correct
+
+ggplot(detectors_new, aes(y = detector, fill = correct)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("cadetblue", "goldenrod")) +
+  labs(
+    x = "Proportion",
+    y = "Detector Type", 
+    title = "Detector Type and Accuracy",
+    fill = "Accuracy")
+```
+
+# ROC Curve/AUC Values
+
+```{r}
+#|label: roc-curve
+detectors_new$kind_binary <- as.numeric(detectors_new$kind == "AI")
+
+roc_data <- detectors_new |>
+  group_by(detector) |>
+  summarize(
+    tpr = list(roc(kind_binary, .pred_AI)$sensitivities),
+    fpr = list(roc(kind_binary, .pred_AI)$specificities),
+    .groups = 'drop'
+  ) |>
+  unnest(cols = c(tpr, fpr))
+
+ggplot(roc_data, aes(x = fpr, y = tpr, color = detector)) +
+  geom_line() +
+  labs(title = "ROC Curves for Different Detectors",
+       x = "False Positive Rate",
+       y = "True Positive Rate",
+       color = "Detector") +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal()
+```
+
+```{r}
+#|label: auc-values
+detectors_new |>
+  group_by(detector) |>
+  summarize(AUC = as.numeric(auc(roc(kind_binary, .pred_AI))),
+            .groups = 'drop')
+```
